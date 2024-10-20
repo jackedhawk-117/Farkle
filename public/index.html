@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farkle Online Game</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #game { margin-top: 20px; }
+        .dice { font-size: 20px; margin: 5px; }
+        button { margin: 10px; }
+        .selected { background-color: lightgreen; }
+    </style>
+</head>
+<body>
+    <h1>Farkle Online Game</h1>
+    <div id="players"></div>
+    <div id="game">
+        <div id="dice"></div>
+        <button id="rollButton" disabled>Roll Dice</button>
+        <button id="endTurnButton" disabled>End Turn</button>
+        <button id="scoreButton" disabled>Score Points</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let selectedDice = [];
+
+        // Log the socket id for debugging
+        socket.on('connect', () => {
+            console.log('Client connected with socket id:', socket.id);
+        });
+
+        // Update the game state
+        socket.on('gameState', (gameState) => {
+            console.log('Received game state:', gameState);
+            console.log('Current player turn:', gameState.currentTurn);
+            console.log('My socket id:', socket.id);
+
+            document.getElementById('players').innerHTML = Object.values(gameState.players)
+                .map(player => `<div>${player.name}: ${player.score} points</div>`)
+                .join('');
+
+            // Display the dice with checkboxes
+            document.getElementById('dice').innerHTML = gameState.dice
+                .map((die, index) => `
+                    <div>
+                        <input type="checkbox" id="die${index}" value="${die}" />
+                        <label for="die${index}" class="dice">🎲 ${die}</label>
+                    </div>
+                `)
+                .join('');
+
+            // Check if it's this client's turn
+            if (gameState.currentTurn === socket.id) {
+                console.log('It is my turn');
+                document.getElementById('rollButton').disabled = false;
+                document.getElementById('endTurnButton').disabled = false;
+                document.getElementById('scoreButton').disabled = false;
+            } else {
+                console.log('It is NOT my turn');
+                document.getElementById('rollButton').disabled = true;
+                document.getElementById('endTurnButton').disabled = true;
+                document.getElementById('scoreButton').disabled = true;
+            }
+
+            // Reset selected dice
+            selectedDice = [];
+            const checkboxes = document.querySelectorAll('#dice input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = false;
+                checkbox.addEventListener('change', () => {
+                    if (checkbox.checked) {
+                        selectedDice.push(parseInt(checkbox.value));
+                    } else {
+                        selectedDice = selectedDice.filter(die => die !== parseInt(checkbox.value));
+                    }
+                    console.log('Selected dice:', selectedDice);
+                });
+            });
+        });
+
+        // Handle rolling dice
+        document.getElementById('rollButton').addEventListener('click', () => {
+            socket.emit('rollDice');
+        });
+
+        // Handle ending turn
+        document.getElementById('endTurnButton').addEventListener('click', () => {
+            socket.emit('endTurn');
+        });
+
+        // Handle scoring points
+        document.getElementById('scoreButton').addEventListener('click', () => {
+            const score = calculateScore(selectedDice);
+            alert(`You scored ${score} points!`);
+            // You may want to send this score to the server to update the game state
+            socket.emit('scorePoints', score);
+            // Clear selected dice after scoring
+            selectedDice = [];
+        });
+
+        // Scoring logic based on common Farkle rules
+        function calculateScore(dice) {
+            const scoreMap = {
+                1: 100,
+                5: 50,
+            };
+            let score = 0;
+
+            // Count occurrences of each die value
+            const counts = {};
+            dice.forEach(die => {
+                counts[die] = (counts[die] || 0) + 1;
+            });
+
+            // Score based on Farkle rules
+            for (const [die, count] of Object.entries(counts)) {
+                if (die == 1) {
+                    score += (count >= 3 ? 1000 : 0) + (count % 3) * scoreMap[die];
+                } else if (die == 5) {
+                    score += (count >= 3 ? die * 100 : 0) + (count % 3) * scoreMap[die];
+                } else if (count >= 3) {
+                    score += die * 100;
+                }
+            }
+
+            return score;
+        }
+    </script>
+</body>
+</html>
